@@ -22,6 +22,9 @@ st.set_page_config(page_title="Dengue Ensemble Dashboard", page_icon="🦟", lay
 
 ACCENT = "#2563eb"
 COLORS = {"baseline": "#94a3b8", "rf": "#3b82f6", "xgb": "#38bdf8", "stack": "#1e3a8a"}
+# high-contrast colours + dash styles for the line charts (real cases stay black)
+LINE_STYLE = {"baseline": ("#f97316", "dash"), "rf": ("#0ea5e9", "solid"),
+              "xgb": ("#16a34a", "dot"), "stack": ("#7c3aed", "solid")}
 INK = "#0f172a"
 MONTHS = ["January", "February", "March", "April", "May", "June", "July",
           "August", "September", "October", "November", "December"]
@@ -207,8 +210,8 @@ elif page == "Model Comparison":
            .highlight_min(subset=["MAE", "RMSE", "sMAPE"], color="#dbeafe")
            .highlight_max(subset=["R2"], color="#dbeafe"))
     st.dataframe(sty, width="stretch")
-    st.caption("MAE / RMSE are in cases per " + ("district-month" if lvl == "district" else "month (all Sri Lanka)")
-               + ". Lower is better, except R² (higher is better). Best value in each column is highlighted.")
+    # st.caption("MAE / RMSE are in cases per " + ("district-month" if lvl == "district" else "month (all Sri Lanka)")
+    #            + ". Lower is better, except R² (higher is better). Best value in each column is highlighted.")
 
     fig = make_subplots(rows=1, cols=4, subplot_titles=["MAE", "RMSE", "R²", "sMAPE (%)"])
     names = list(df.index)
@@ -219,49 +222,6 @@ elif page == "Model Comparison":
                              textposition="outside", showlegend=False), row=1, col=i)
     fig.update_layout(hovermode="closest")
     st.plotly_chart(style_fig(fig, 340), width="stretch")
-
-    st.markdown("### Why did these models behave this way?")
-    o, mm = metrics["one_step"], metrics["multi_step"]
-    w = metrics["stack_weights"]
-    imp = metrics["importance"]["rf"]
-    top2 = sorted(imp.items(), key=lambda x: -x[1])[:2]
-    st.markdown(f"""
-<div class="note">
-<b>Stacking is the best overall.</b> It has the lowest next-month district RMSE
-({o['stack']['district']['RMSE']:.1f} vs {o['baseline']['district']['RMSE']:.1f} for the baseline) and wins every
-metric when forecasting 24 months ahead (district RMSE {mm['stack']['district']['RMSE']:.1f} vs
-{mm['rf']['district']['RMSE']:.1f} RF, {mm['xgb']['district']['RMSE']:.1f} XGBoost,
-{mm['baseline']['district']['RMSE']:.1f} baseline).
-</div>
-""", unsafe_allow_html=True)
-    st.write("")
-    t1, t2 = st.columns(2)
-    t1.markdown(f"""
-**Next-month accuracy is close for all four models.**
-Dengue next month is mostly "last month again": the top features are
-`{top2[0][0]}` and `{top2[1][0]}`, so even a linear model captures most of the signal.
-Trees add value where relations are non-linear (district differences, monsoon season, delayed rainfall effect),
-giving 3 to 6% lower district error, but nobody can predict a sudden jump such as the
-Dec 2023 surge from past values alone.
-
-**Bagging vs boosting.** Random Forest averages many deep trees (lower *variance*),
-XGBoost fixes errors sequentially (lower *bias*). With only about 5,000 monthly rows and
-very autocorrelated data, there is little left for boosting to extract, so both end up within
-about 1% of each other.
-""")
-    t2.markdown(f"""
-**Why stacking wins when forecasting ahead.** Predictions are fed back in as the next month's input, so errors compound.
-The stacking meta-learner gave most weight to the linear (Ridge) learner
-(**{w['ridge']:.2f}**) plus the Random Forest (**{w['rf']:.2f}**), and almost none to XGBoost
-({w['xgb']:.2f}) and KNN ({w['knn']:.2f}). The smooth linear seasonal/trend behaviour is the more
-reliable ingredient once predictions are recycled, and the forest adds non-linear corrections.
-
-**The baseline is worst when forecasting ahead:** it cannot represent the non-linear
-seasonal peaks, and its mistakes compound month after month.
-""")
-    st.markdown('<div class="warn"><b>Limitation:</b> the test window is 24 months and holds one surge, '
-                'so small differences are indicative rather than statistically conclusive.</div>',
-                unsafe_allow_html=True)
 
     with st.expander("Feature importance, stacking weights and tuned settings"):
         a, b = st.columns(2)
@@ -312,7 +272,7 @@ elif page == "Past Predictions":
     for k in chosen:
         p = pred[k].reindex(a.index).dropna()
         fig.add_trace(go.Scatter(x=p.index, y=p.values, name=SHORT[k], mode="lines",
-                                 line=dict(color=COLORS[k], width=2)))
+                                 line=dict(color=LINE_STYLE[k][0], width=2.4, dash=LINE_STYLE[k][1])))
     if shade:
         fig.add_vrect(x0=shade[0], x1=shade[1], fillcolor="#f59e0b", opacity=0.10, line_width=0,
                       annotation_text="test period (unseen)", annotation_position="top left")
