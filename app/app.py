@@ -20,8 +20,11 @@ import forecast as F
 # --------------------------------------------------------------------------
 st.set_page_config(page_title="Dengue Ensemble Dashboard", page_icon="🦟", layout="wide")
 
-ACCENT = "#0f766e"
-COLORS = {"baseline": "#94a3b8", "rf": "#0f766e", "xgb": "#f59e0b", "stack": "#6366f1"}
+ACCENT = "#2563eb"
+COLORS = {"baseline": "#94a3b8", "rf": "#3b82f6", "xgb": "#38bdf8", "stack": "#1e3a8a"}
+# high-contrast colours + dash styles for the line charts (real cases stay black)
+LINE_STYLE = {"baseline": ("#f97316", "dash"), "rf": ("#0ea5e9", "solid"),
+              "xgb": ("#16a34a", "dot"), "stack": ("#7c3aed", "solid")}
 INK = "#0f172a"
 MONTHS = ["January", "February", "March", "April", "May", "June", "July",
           "August", "September", "October", "November", "December"]
@@ -30,24 +33,52 @@ st.markdown(f"""
 <style>
   .block-container {{ padding-top: 2rem; max-width: 1250px; }}
   h1, h2, h3 {{ letter-spacing: -0.02em; }}
-  .hero {{ background: linear-gradient(135deg, #0f766e 0%, #115e59 55%, #134e4a 100%);
+  .hero {{ background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 55%, #172554 100%);
           border-radius: 18px; padding: 26px 30px; color: white; margin-bottom: 18px; }}
   .hero h1 {{ color: white; margin: 0 0 4px 0; font-size: 1.9rem; }}
-  .hero p {{ color: #ccfbf1; margin: 0; font-size: 1.0rem; }}
+  .hero p {{ color: #dbeafe; margin: 0; font-size: 1.0rem; }}
   .card {{ background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 18px;
           box-shadow: 0 1px 2px rgba(15,23,42,.04); height: 100%; }}
   .card .lbl {{ color: #64748b; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }}
   .card .val {{ color: {INK}; font-size: 1.85rem; font-weight: 700; line-height: 1.25; }}
   .card .sub {{ color: #64748b; font-size: .85rem; }}
-  .card.big {{ background: #f0fdfa; border-color: #99f6e4; }}
+  .card.big {{ background: #eff6ff; border-color: #bfdbfe; }}
   .card.big .val {{ color: {ACCENT}; font-size: 2.6rem; }}
   .note {{ background: #f8fafc; border-left: 4px solid {ACCENT}; padding: 12px 16px; border-radius: 8px;
           color: #334155; font-size: .93rem; }}
   .warn {{ background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 8px;
           color: #78350f; font-size: .93rem; }}
   .pill {{ display:inline-block; padding: 2px 10px; border-radius: 999px; font-size: .75rem; font-weight: 600;
-          background: #ccfbf1; color: #115e59; }}
-  section[data-testid="stSidebar"] {{ background: #f8fafc; }}
+          background: #dbeafe; color: #1e40af; }}
+
+  /* ---- dark blue sidebar ---- */
+  section[data-testid="stSidebar"] {{ background: linear-gradient(180deg, #0b1b45 0%, #0a1a40 55%, #12307a 100%);
+          border-right: none; }}
+  section[data-testid="stSidebar"] * {{ color: #cbd5e1; }}
+  section[data-testid="stSidebar"] hr {{ border-color: rgba(148,163,184,.25); }}
+  .brand {{ display:flex; align-items:center; gap:12px; padding: 6px 4px 18px 4px; }}
+  .brand .logo {{ width:48px; height:48px; border-radius:50%; background:#b91c1c; display:flex;
+          align-items:center; justify-content:center; font-size:26px; flex:none; }}
+  .brand .t1 {{ color:#fff !important; font-weight:800; font-size:1.25rem; line-height:1.1; }}
+  .brand .t2 {{ color:#e2e8f0 !important; font-size:1rem; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] {{ gap: 6px; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label {{ padding: 11px 14px; border-radius: 12px;
+          width: 100%; cursor: pointer; transition: background .15s; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {{ background: rgba(255,255,255,.08); }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label > div > div:first-child {{ display:none; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label p {{ font-size: .98rem; font-weight: 500;
+          display:flex; align-items:center; gap: 14px; margin:0; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label p::before {{ content:""; width:20px; height:20px;
+          background-color:#e2e8f0; -webkit-mask-size:contain; mask-size:contain; -webkit-mask-repeat:no-repeat;
+          mask-repeat:no-repeat; -webkit-mask-position:center; mask-position:center; flex:none; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {{ background: #2f6df0;
+          box-shadow: 0 4px 14px rgba(47,109,240,.45); }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {{ color:#fff; font-weight:600; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p::before {{ background-color:#fff; }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-of-type(1) label p::before {{ -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z'/></svg>"); mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z'/></svg>"); }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-of-type(2) label p::before {{ -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 18h16v2H4v-2zm1-3l4-5 4 3 6-8 1.6 1.2L13.4 15 9.5 12 6.6 15.8 5 15z'/></svg>"); mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 18h16v2H4v-2zm1-3l4-5 4 3 6-8 1.6 1.2L13.4 15 9.5 12 6.6 15.8 5 15z'/></svg>"); }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-of-type(3) label p::before {{ -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M13 3a9 9 0 100 18 9 9 0 000-18zm1 9.4l3.5 2.1-.8 1.3L12 13V7h2v5.4z'/></svg>"); mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M13 3a9 9 0 100 18 9 9 0 000-18zm1 9.4l3.5 2.1-.8 1.3L12 13V7h2v5.4z'/></svg>"); }}
+  section[data-testid="stSidebar"] div[role="radiogroup"] > div:nth-of-type(4) label p::before {{ -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2l3 7 7 .6-5.3 4.6 1.6 7.1L12 17.8 5.7 21.3l1.6-7.1L2 9.6 9 9z'/></svg>"); mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 2l3 7 7 .6-5.3 4.6 1.6 7.1L12 17.8 5.7 21.3l1.6-7.1L2 9.6 9 9z'/></svg>"); }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -97,7 +128,8 @@ nat = panel.groupby("month_start")["cases"].sum()
 # Sidebar
 # --------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### 🦟 Dengue Forecast")
+    st.markdown('<div class="brand"><div class="logo">🦟</div><div><div class="t1">Dengue<br>Forecast</div>'
+                '<div class="t2">Sri Lanka</div></div></div>', unsafe_allow_html=True)
     page = st.radio("Navigate", ["Overview", "Model Comparison", "Past Predictions", "Future Forecast"],
                     label_visibility="collapsed")
     st.markdown("---")
@@ -128,7 +160,7 @@ if page == "Overview":
     st.write("")
 
     fig = go.Figure(go.Scatter(x=nat.index, y=nat.values, mode="lines", line=dict(color=ACCENT, width=2),
-                               fill="tozeroy", fillcolor="rgba(15,118,110,.10)", name="Cases"))
+                               fill="tozeroy", fillcolor="rgba(37,99,235,.10)", name="Cases"))
     fig.update_layout(title="National dengue cases per month")
     st.plotly_chart(style_fig(fig, 340), width="stretch")
 
@@ -139,7 +171,7 @@ if page == "Overview":
     fig.update_layout(title="Seasonality: average cases by calendar month")
     a.plotly_chart(style_fig(fig, 320), width="stretch")
     top = panel.groupby("district")["cases"].sum().sort_values().tail(10)
-    fig = go.Figure(go.Bar(x=top.values, y=top.index, orientation="h", marker_color="#14b8a6"))
+    fig = go.Figure(go.Bar(x=top.values, y=top.index, orientation="h", marker_color="#60a5fa"))
     fig.update_layout(title="Top 10 districts by total cases")
     b.plotly_chart(style_fig(fig, 320), width="stretch")
 
@@ -175,11 +207,11 @@ elif page == "Model Comparison":
     st.write("")
 
     sty = (df.style.format({"MAE": "{:,.1f}", "RMSE": "{:,.1f}", "R2": "{:.3f}", "sMAPE": "{:.1f}%"})
-           .highlight_min(subset=["MAE", "RMSE", "sMAPE"], color="#ccfbf1")
-           .highlight_max(subset=["R2"], color="#ccfbf1"))
+           .highlight_min(subset=["MAE", "RMSE", "sMAPE"], color="#dbeafe")
+           .highlight_max(subset=["R2"], color="#dbeafe"))
     st.dataframe(sty, width="stretch")
-    st.caption("MAE / RMSE are in cases per " + ("district-month" if lvl == "district" else "month (all Sri Lanka)")
-               + ". Lower is better, except R² (higher is better). Best value in each column is highlighted.")
+    # st.caption("MAE / RMSE are in cases per " + ("district-month" if lvl == "district" else "month (all Sri Lanka)")
+    #            + ". Lower is better, except R² (higher is better). Best value in each column is highlighted.")
 
     fig = make_subplots(rows=1, cols=4, subplot_titles=["MAE", "RMSE", "R²", "sMAPE (%)"])
     names = list(df.index)
@@ -190,49 +222,6 @@ elif page == "Model Comparison":
                              textposition="outside", showlegend=False), row=1, col=i)
     fig.update_layout(hovermode="closest")
     st.plotly_chart(style_fig(fig, 340), width="stretch")
-
-    st.markdown("### Why did these models behave this way?")
-    o, mm = metrics["one_step"], metrics["multi_step"]
-    w = metrics["stack_weights"]
-    imp = metrics["importance"]["rf"]
-    top2 = sorted(imp.items(), key=lambda x: -x[1])[:2]
-    st.markdown(f"""
-<div class="note">
-<b>Stacking is the best overall.</b> It has the lowest next-month district RMSE
-({o['stack']['district']['RMSE']:.1f} vs {o['baseline']['district']['RMSE']:.1f} for the baseline) and wins every
-metric when forecasting 24 months ahead (district RMSE {mm['stack']['district']['RMSE']:.1f} vs
-{mm['rf']['district']['RMSE']:.1f} RF, {mm['xgb']['district']['RMSE']:.1f} XGBoost,
-{mm['baseline']['district']['RMSE']:.1f} baseline).
-</div>
-""", unsafe_allow_html=True)
-    st.write("")
-    t1, t2 = st.columns(2)
-    t1.markdown(f"""
-**Next-month accuracy is close for all four models.**
-Dengue next month is mostly "last month again": the top features are
-`{top2[0][0]}` and `{top2[1][0]}`, so even a linear model captures most of the signal.
-Trees add value where relations are non-linear (district differences, monsoon season, delayed rainfall effect),
-giving 3 to 6% lower district error, but nobody can predict a sudden jump such as the
-Dec 2023 surge from past values alone.
-
-**Bagging vs boosting.** Random Forest averages many deep trees (lower *variance*),
-XGBoost fixes errors sequentially (lower *bias*). With only about 5,000 monthly rows and
-very autocorrelated data, there is little left for boosting to extract, so both end up within
-about 1% of each other.
-""")
-    t2.markdown(f"""
-**Why stacking wins when forecasting ahead.** Predictions are fed back in as the next month's input, so errors compound.
-The stacking meta-learner gave most weight to the linear (Ridge) learner
-(**{w['ridge']:.2f}**) plus the Random Forest (**{w['rf']:.2f}**), and almost none to XGBoost
-({w['xgb']:.2f}) and KNN ({w['knn']:.2f}). The smooth linear seasonal/trend behaviour is the more
-reliable ingredient once predictions are recycled, and the forest adds non-linear corrections.
-
-**The baseline is worst when forecasting ahead:** it cannot represent the non-linear
-seasonal peaks, and its mistakes compound month after month.
-""")
-    st.markdown('<div class="warn"><b>Limitation:</b> the test window is 24 months and holds one surge, '
-                'so small differences are indicative rather than statistically conclusive.</div>',
-                unsafe_allow_html=True)
 
     with st.expander("Feature importance, stacking weights and tuned settings"):
         a, b = st.columns(2)
@@ -283,7 +272,7 @@ elif page == "Past Predictions":
     for k in chosen:
         p = pred[k].reindex(a.index).dropna()
         fig.add_trace(go.Scatter(x=p.index, y=p.values, name=SHORT[k], mode="lines",
-                                 line=dict(color=COLORS[k], width=2)))
+                                 line=dict(color=LINE_STYLE[k][0], width=2.4, dash=LINE_STYLE[k][1])))
     if shade:
         fig.add_vrect(x0=shade[0], x1=shade[1], fillcolor="#f59e0b", opacity=0.10, line_width=0,
                       annotation_text="test period (unseen)", annotation_position="top left")
@@ -382,7 +371,7 @@ else:
             fig.add_trace(go.Scatter(x=s2["month_start"], y=s2["high"], mode="lines", line=dict(width=0),
                                      showlegend=False, hoverinfo="skip"))
             fig.add_trace(go.Scatter(x=s2["month_start"], y=s2["low"], mode="lines", line=dict(width=0),
-                                     fill="tonexty", fillcolor="rgba(99,102,241,.18)", name="80% range",
+                                     fill="tonexty", fillcolor="rgba(37,99,235,.18)", name="80% range",
                                      hoverinfo="skip"))
             xs = pd.concat([pd.Series([DATA_END]), s2["month_start"]])
             ys = pd.concat([pd.Series([actual.iloc[-1]]), s2["pred"]])
