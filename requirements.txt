@@ -1,0 +1,13 @@
+# Pinned to the versions the models were trained with
+# (the .joblib files only load reliably with the same scikit-learn / xgboost)
+numpy==2.2.6
+pandas==2.3.3
+scikit-learn==1.7.2
+xgboost==3.2.0
+joblib==1.5.2
+streamlit==1.65.0
+plotly==7.1.0
+matplotlib
+ipykernel
+nbformat
+nbclient
