@@ -181,6 +181,113 @@ class TimeStacker(BaseEstimator, RegressorMixin):
 
 
 # --------------------------------------------------------------------------
+# 3b. Hybrid: SARIMA (time-series part) + Random Forest (learns what is left)
+# --------------------------------------------------------------------------
+class SarimaRFHybrid(BaseEstimator, RegressorMixin):
+    """Hybrid of a seasonal ARIMA model and a Random Forest.
+
+    1. SARIMA is fitted on the NATIONAL monthly series log(1 + total cases). It captures
+       the trend, the seasonal cycle and the momentum of the national wave.
+    2. For every district the SARIMA level is shifted by a district offset
+       (the district's average gap to SARIMA on the training rows):
+           linear_part(d, t) = offset(d) + sarima(t)
+    3. A Random Forest is trained on the RESIDUAL  y - linear_part  using all the
+       usual features (weather, lags, district, ...), so it only has to learn the
+       non-linear structure that SARIMA cannot see.
+    Prediction = linear_part + RF residual.
+
+    SARIMA parameters are estimated on the training months only. The SARIMA value for a month
+    is always built from national data up to the month BEFORE it (one-step mode), or from the
+    forecast origin onwards (recursive mode used by the future forecast), never from the future.
+    """
+    needs_dates = True          # predict() wants a `month_start` column next to the features
+
+    def __init__(self, rf, orders=None, seasonal_orders=((0, 1, 1, 12), (1, 1, 1, 12))):
+        self.rf = rf
+        self.orders = orders
+        self.seasonal_orders = seasonal_orders
+
+    # ---- SARIMA helpers ----------------------------------------------------
+    @staticmethod
+    def _model(endog, order, sorder):
+        from statsmodels.tsa.statespace.sarimax import SARIMAX
+        return SARIMAX(endog, order=order, seasonal_order=sorder, enforce_stationarity=False,
+                       enforce_invertibility=False)
+
+    def _smooth(self, endog):
+        return self._model(endog, self.order_, self.sorder_).smooth(self.sarima_params_)
+
+    def _select_and_fit(self, nat_train):
+        import itertools
+        import warnings
+        orders = self.orders or [(p, d, q) for p, d, q in itertools.product((0, 1, 2), (0, 1), (0, 1, 2))]
+        best = None
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for o, so in itertools.product(orders, self.seasonal_orders):
+                try:
+                    r = self._model(nat_train, o, so).fit(disp=False, maxiter=100)
+                except Exception:
+                    continue
+                if np.isfinite(r.aic) and (best is None or r.aic < best[0]):
+                    best = (r.aic, o, so, np.asarray(r.params))
+        self.aic_, self.order_, self.sorder_, self.sarima_params_ = best
+
+    # ---- fit -----------------------------------------------------------------
+    def fit(self, X, y, dates, nat_full, train_end):
+        """X: feature frame, y: log target, dates: month of every row,
+        nat_full: Series log1p(national cases) indexed by month (whole history),
+        train_end: last month the model may learn from."""
+        import warnings
+        nat_full = nat_full.asfreq("MS")
+        self.nat_full_ = nat_full
+        self.train_end_ = pd.Timestamp(train_end)
+        self._select_and_fit(nat_full[nat_full.index <= self.train_end_])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fitted = self._smooth(nat_full).get_prediction().predicted_mean   # one-step-ahead
+        self.onestep_ = dict(zip(fitted.index, np.asarray(fitted)))
+        dates = pd.to_datetime(pd.Series(np.asarray(dates)))
+        sar = dates.map(self.onestep_).to_numpy()
+        gap = pd.Series(np.asarray(y) - sar).groupby(X["district_code"].to_numpy())
+        self.offset_ = gap.mean().to_dict()
+        self.rf_ = clone(self.rf).fit(X[FEATURES], np.asarray(y) - self._linear(X, sar))
+        self.lookup_ = self.onestep_
+        return self
+
+    def _linear(self, X, sar):
+        return X["district_code"].map(self.offset_).to_numpy() + np.asarray(sar)
+
+    # ---- which national SARIMA values to use -------------------------------------
+    def use_onestep(self):
+        """Next-month mode: SARIMA sees the real national history up to the previous month."""
+        self.lookup_ = self.onestep_
+        return self
+
+    def set_origin(self, origin, n_months):
+        """Recursive mode: SARIMA only knows national data up to `origin` and forecasts beyond."""
+        import warnings
+        origin = pd.Timestamp(origin)
+        known = self.nat_full_[self.nat_full_.index <= origin]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fc = self._smooth(known).forecast(n_months)
+        self.lookup_ = dict(zip(fc.index, np.asarray(fc)))
+        return self
+
+    def sarima_series(self):
+        return pd.Series(self.lookup_).sort_index()
+
+    # ---- predict ---------------------------------------------------------------------
+    def predict(self, Xd):
+        sar = pd.to_datetime(Xd["month_start"]).map(self.lookup_).to_numpy(dtype=float)
+        if np.isnan(sar).any():
+            raise ValueError("SARIMA has no value for some months: call set_origin(...) first")
+        X = Xd[FEATURES]
+        return self._linear(X, sar) + self.rf_.predict(X)
+
+
+# --------------------------------------------------------------------------
 # 4. Metrics
 # --------------------------------------------------------------------------
 def smape(y, p):
@@ -221,6 +328,9 @@ def recursive_forecast(model, hist: pd.DataFrame, n_months: int, clim=None) -> p
     if clim is None:
         clim = make_climatology(hist)
     last = hist["month_start"].max()
+    dated = getattr(model, "needs_dates", False)
+    if dated:                                   # hybrid: SARIMA forecasts from the last known month
+        model.set_origin(last, n_months)
     keep_from = last - pd.DateOffset(months=15)          # 12 lags + margin is enough
     work = hist[hist["month_start"] >= keep_from][BASE_COLS].copy()
     static = (hist.sort_values("month_start").groupby("district").tail(1)
@@ -235,7 +345,7 @@ def recursive_forecast(model, hist: pd.DataFrame, n_months: int, clim=None) -> p
         work = pd.concat([work, new[BASE_COLS]], ignore_index=True)
         feat = add_features(work)
         rows = feat[feat["month_start"] == ms]
-        pred = to_cases(model.predict(rows[FEATURES]))
+        pred = to_cases(model.predict(rows[FEATURES + ["month_start"]] if dated else rows[FEATURES]))
         pmap = dict(zip(rows["district"], pred))
         mask = work["month_start"] == ms
         work.loc[mask, "cases"] = work.loc[mask, "district"].map(pmap)

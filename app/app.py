@@ -21,10 +21,10 @@ import forecast as F
 st.set_page_config(page_title="Dengue Ensemble Dashboard", page_icon="🦟", layout="wide")
 
 ACCENT = "#2563eb"
-COLORS = {"baseline": "#94a3b8", "rf": "#3b82f6", "xgb": "#38bdf8", "stack": "#1e3a8a"}
+COLORS = {"baseline": "#94a3b8", "rf": "#3b82f6", "xgb": "#38bdf8", "stack": "#1e3a8a", "hybrid": "#f59e0b"}
 # high-contrast colours + dash styles for the line charts (real cases stay black)
 LINE_STYLE = {"baseline": ("#f97316", "dash"), "rf": ("#0ea5e9", "solid"),
-              "xgb": ("#16a34a", "dot"), "stack": ("#7c3aed", "solid")}
+              "xgb": ("#16a34a", "dot"), "stack": ("#7c3aed", "solid"), "hybrid": ("#e11d48", "dashdot")}
 INK = "#0f172a"
 MONTHS = ["January", "February", "March", "April", "May", "June", "July",
           "August", "September", "October", "November", "December"]
@@ -51,9 +51,16 @@ st.markdown(f"""
   .pill {{ display:inline-block; padding: 2px 10px; border-radius: 999px; font-size: .75rem; font-weight: 600;
           background: #dbeafe; color: #1e40af; }}
 
+  /* ---- coloured top bar ---- */
+  header[data-testid="stHeader"] {{ background: #000000;
+          border-bottom: 3px solid #2563eb; box-shadow: 0 2px 8px rgba(15,23,42,.25); }}
+  header[data-testid="stHeader"] *, header[data-testid="stHeader"] button {{ color: #ffffff !important; }}
+  header[data-testid="stHeader"] svg {{ fill: #ffffff; }}
+  .block-container {{ padding-top: 4.5rem; }}
+
   /* ---- dark blue sidebar ---- */
   section[data-testid="stSidebar"] {{ background: linear-gradient(180deg, #0b1b45 0%, #0a1a40 55%, #12307a 100%);
-          border-right: none; }}
+          border-right: 2px solid rgba(255,255,255,.55); }}
   section[data-testid="stSidebar"] * {{ color: #cbd5e1; }}
   section[data-testid="stSidebar"] hr {{ border-color: rgba(148,163,184,.25); }}
   .brand {{ display:flex; align-items:center; gap:12px; padding: 6px 4px 18px 4px; }}
@@ -108,7 +115,7 @@ def get_data():
     return F.load_metrics(), F.load_panel(), F.load_onestep(), F.load_backtest()
 
 
-@st.cache_data(show_spinner="Forecasting the next 36 months with all four models (first load only)...")
+@st.cache_data(show_spinner="Forecasting the next 36 months with all five models (first load only)...")
 def get_forecasts():
     metrics, panel, _, _ = get_data()
     return F.forecast_all(F.load_models(), panel)
@@ -116,7 +123,7 @@ def get_forecasts():
 
 metrics, panel, onestep, backtest = get_data()
 LABEL = metrics["labels"]
-SHORT = {"baseline": "Baseline", "rf": "Random Forest", "xgb": "XGBoost", "stack": "Stacking"}
+SHORT = {"baseline": "Baseline", "rf": "Random Forest", "xgb": "XGBoost", "stack": "Stacking", "hybrid": "Hybrid (SARIMA+RF)"}
 BEST = metrics["best_model"]
 DISTRICTS = sorted(panel["district"].unique())
 REGIONS = [F.ALL] + DISTRICTS
@@ -135,7 +142,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption(f"Data: {pd.Timestamp(metrics['data_start']):%b %Y} to {DATA_END:%b %Y} · 25 districts")
     st.caption(f"Test period: {(CUTOFF + pd.DateOffset(months=1)):%b %Y} to {DATA_END:%b %Y}")
-    st.caption("Models: Linear Regression (baseline), Random Forest (bagging), XGBoost (boosting), Stacking.")
+    st.caption("Models: Linear Regression (baseline), Random Forest (bagging), XGBoost (boosting), Stacking, SARIMA + Random Forest (hybrid).")
 
 st.markdown(
     '<div class="hero"><h1>Dengue Cases in Sri Lanka</h1>'
@@ -179,8 +186,8 @@ if page == "Overview":
     h = st.columns(3)
     h[0].markdown(card("1 · Data", "Weekly → monthly",
                        "25 districts, cases + rainfall, temperature, humidity, population"), unsafe_allow_html=True)
-    h[1].markdown(card("2 · Models", "4 compared",
-                       "Linear baseline vs Random Forest (bagging) vs XGBoost (boosting) vs Stacking"),
+    h[1].markdown(card("2 · Models", "5 compared",
+                       "Linear baseline, Random Forest (bagging), XGBoost (boosting), Stacking and a SARIMA + Random Forest hybrid"),
                   unsafe_allow_html=True)
     h[2].markdown(card("3 · Forecast", "Month by month",
                        "Each predicted month feeds the next, with a measured uncertainty range"),
@@ -210,18 +217,26 @@ elif page == "Model Comparison":
            .highlight_min(subset=["MAE", "RMSE", "sMAPE"], color="#dbeafe")
            .highlight_max(subset=["R2"], color="#dbeafe"))
     st.dataframe(sty, width="stretch")
-    # st.caption("MAE / RMSE are in cases per " + ("district-month" if lvl == "district" else "month (all Sri Lanka)")
-    #            + ". Lower is better, except R² (higher is better). Best value in each column is highlighted.")
+    st.caption("MAE / RMSE are in cases per " + ("district-month" if lvl == "district" else "month (all Sri Lanka)")
+               + ". Lower is better, except R² (higher is better). Best value in each column is highlighted.")
 
     fig = make_subplots(rows=1, cols=4, subplot_titles=["MAE", "RMSE", "R²", "sMAPE (%)"])
     names = list(df.index)
     cols = [COLORS[k] for k in src.keys()]
     for i, m in enumerate(["MAE", "RMSE", "R2", "sMAPE"], start=1):
-        fig.add_trace(go.Bar(x=[SHORT[k] for k in src.keys()], y=df[m].values, marker_color=cols,
+        fig.add_trace(go.Bar(x=[SHORT[k].split(" (")[0] for k in src.keys()], y=df[m].values, marker_color=cols,
                              text=[f"{v:,.2f}" if m == "R2" else f"{v:,.0f}" for v in df[m].values],
                              textposition="outside", showlegend=False), row=1, col=i)
     fig.update_layout(hovermode="closest")
     st.plotly_chart(style_fig(fig, 340), width="stretch")
+
+    with st.expander("What is each model?"):
+        st.markdown(
+            "- **Baseline: Linear Regression.** No tuning, no cross-validation.\n"
+            "- **Bagging: Random Forest.** Many deep trees on bootstrap samples, averaged.\n"
+            "- **Boosting: XGBoost.** Shallow trees added one by one, each fixing the previous errors.\n"
+            "- **Stacking.** Random Forest, XGBoost, Ridge and KNN blended by a Ridge meta-learner.\n"
+            "- **Hybrid: SARIMA + Random Forest.** SARIMA models the national trend and seasonality; a Random Forest then learns the remaining per-district error.")
 
     with st.expander("Feature importance, stacking weights and tuned settings"):
         a, b = st.columns(2)
@@ -382,7 +397,7 @@ else:
             fig.update_layout(title=f"History and forecast: {region}", yaxis_title="cases per month")
             st.plotly_chart(style_fig(fig, 420), width="stretch")
         with right:
-            st.markdown(f"**All four models, {tname}**")
+            st.markdown(f"**All five models, {tname}**")
             comp = []
             for k in F.MODEL_KEYS:
                 r = F.region_series(fc, k, region, metrics["sigma"])

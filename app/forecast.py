@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import pipeline as P  # noqa: E402  (shared with the notebook)
 
-MODEL_KEYS = ["baseline", "rf", "xgb", "stack"]
+MODEL_KEYS = ["baseline", "rf", "xgb", "stack", "hybrid"]
 MAX_HORIZON = 36            # months beyond the last month of data
 ALL = "All Sri Lanka"
 
